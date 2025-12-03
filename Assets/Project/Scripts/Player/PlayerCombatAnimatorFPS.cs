@@ -1,8 +1,5 @@
 // PlayerCombatAnimatorFPS.cs
 // Связывает события PlayerCombatController с Animator рук (FPS-рег).
-//
-// Папка: Project/Scripts/Player
-// Namespace: Project.Scripts.Player
 
 using UnityEngine;
 

@@ -1,8 +1,5 @@
 // KrapivaEnemy.cs
 // Простой враг для VS: получает урон, умирает, даёт жгучесть при контакте.
-//
-// Папка: Project/Scripts/Enemies
-// Namespace: Project.Scripts.Enemies
 
 using UnityEngine;
 using Project.Scripts.Combat;
