@@ -1,88 +1,109 @@
 // FirstPersonController.cs
 // Базовое управление от первого лица + покачивание рук,
-// интеграция со стаминой и жгучестью.
-//
-// Папка: Project/Scripts/Player
-// Namespace: Project.Scripts.Player
+// интеграция со стаминой, жгучестью и доджем.
 
+using System;
 using UnityEngine;
 
 namespace Project.Scripts.Player
 {
     [DisallowMultipleComponent]
     [RequireComponent(typeof(CharacterController))]
-    [RequireComponent(typeof(PlayerStamina))]
-    [RequireComponent(typeof(PlayerBurn))]
     public sealed class FirstPersonController : MonoBehaviour
     {
         [Header("Ссылки")]
-        [SerializeField] private Camera _camera;
+        [SerializeField] private new Camera              camera;
+        [SerializeField] private CharacterController     controller;
+        [SerializeField] private PlayerStamina           stamina;
+        [SerializeField] private PlayerBurn              burn;
+        [SerializeField] private PlayerCombatController  combatController;
 
         [Header("Руки (FPS-рег)")]
         [SerializeField, Tooltip("Корневой объект рук, потомок камеры (например, Hands).")]
-        private Transform _handsRoot;
+        private Transform handsRoot;
         [SerializeField, Tooltip("Кость ключицы левой руки (clavicle_l).")]
-        private Transform _leftClavicle;
+        private Transform leftClavicle;
         [SerializeField, Tooltip("Кость ключицы правой руки (clavicle_r).")]
-        private Transform _rightClavicle;
+        private Transform rightClavicle;
 
         [Header("Движение")]
-        [SerializeField, Min(0.1f)] private float _walkSpeed = 3.5f;
-        [SerializeField, Min(0.1f)] private float _runSpeed  = 6.0f;
-        [SerializeField]           private float _jumpForce  = 5.0f;
-        [SerializeField]           private float _gravity    = -9.81f;
+        [SerializeField, Min(0.1f)] private float walkSpeed = 3.5f;
+        [SerializeField, Min(0.1f)] private float runSpeed  = 6.0f;
+        [SerializeField]            private float jumpForce  = 5.0f;
+        [SerializeField]            private float gravity    = -9.81f;
 
         [Header("Вращение камеры")]
-        [SerializeField] private float _mouseSensitivity = 100f;
-        [SerializeField] private float _verticalLimit    = 80f;
+        [SerializeField] private float mouseSensitivity = 100f;
+        [SerializeField] private float verticalLimit    = 80f;
 
         [Header("Покачивание рук")]
         [SerializeField, Tooltip("Амплитуда вертикального покачивания всего рига рук.")]
-        private float _bobAmplitude   = 0.05f;
+        private float bobAmplitude   = 0.05f;
         [SerializeField, Tooltip("Частота покачивания при ходьбе/беге.")]
-        private float _bobFrequency   = 8.0f;
+        private float bobFrequency   = 8.0f;
         [SerializeField, Tooltip("Скорость возврата рук в исходное положение.")]
-        private float _bobReturnSpeed = 10f;
+        private float bobReturnSpeed = 10f;
         [SerializeField, Tooltip("Минимальное значение ввода движения, чтобы считать, что персонаж идёт.")]
-        private float _moveThreshold  = 0.1f;
+        private float moveThreshold  = 0.1f;
         [SerializeField, Tooltip("Угол покачивания ключиц влево/вправо (в градусах).")]
-        private float _clavicleSwingAngle = 4f;
+        private float clavicleSwingAngle = 4f;
 
         [Header("Стамина")]
         [SerializeField, Tooltip("Расход стамины за секунду при беге.")]
-        private float _runStaminaCostPerSecond = 15f;
+        private float runStaminaCostPerSecond = 15f;
         [SerializeField, Tooltip("Разовый расход стамины при прыжке.")]
-        private float _jumpStaminaCost = 10f;
+        private float jumpStaminaCost = 10f;
         [SerializeField, Tooltip("Множитель скорости при нулевой стамине.")]
         [Range(0.1f, 1f)]
-        private float _noStaminaSpeedMultiplier = 0.4f;
+        private float noStaminaSpeedMultiplier = 0.4f;
 
-        private CharacterController _controller;
-        private PlayerStamina       _stamina;
-        private PlayerBurn          _burn;
+        [Header("Додж (рывок)")]
+        [SerializeField, Tooltip("Дистанция рывка в метрах.")]
+        private float dodgeDistance = 4f;
+        [SerializeField, Tooltip("Длительность рывка, сек.")]
+        private float dodgeDuration = 0.2f;
+        [SerializeField, Tooltip("Кулдаун рывка, сек.")]
+        private float dodgeCooldown = 0.5f;
+        [SerializeField, Tooltip("Разовый расход стамины на рывок.")]
+        private float dodgeStaminaCost = 20f;
 
-        private float      _cameraPitch;
-        private float      _verticalVelocity;
+        [Header("Анимация движения (опционально)")]
+        [SerializeField] private Animator handsAnimator;
+        [SerializeField] private string   dodgeTriggerName = "Dodge";
 
-        private Vector3    _handsRootDefaultLocalPos;
-        private Quaternion _leftClavicleDefaultRot;
-        private Quaternion _rightClavicleDefaultRot;
-        private float      _bobTimer;
+        private float      cameraPitch;
+        private float      verticalVelocity;
+
+        private Vector3    handsRootDefaultLocalPos;
+        private Quaternion leftClavicleDefaultRot;
+        private Quaternion rightClavicleDefaultRot;
+        private float      bobTimer;
+
+        // Додж
+        private float   dodgeTimer;
+        private float   dodgeCooldownTimer;
+        private Vector3 dodgeVelocity;
+
+        private int dodgeTriggerHash;
+
+        public bool IsDodging { get; private set; }
+
+        public event Action DodgeStarted;
+        public event Action DodgeEnded;
 
         private void Awake()
         {
-            _controller = GetComponent<CharacterController>();
-            _stamina    = GetComponent<PlayerStamina>();
-            _burn       = GetComponent<PlayerBurn>();
+            if (handsRoot)
+                handsRootDefaultLocalPos = handsRoot.localPosition;
 
-            if (_handsRoot != null)
-                _handsRootDefaultLocalPos = _handsRoot.localPosition;
+            if (leftClavicle)
+                leftClavicleDefaultRot = leftClavicle.localRotation;
 
-            if (_leftClavicle != null)
-                _leftClavicleDefaultRot = _leftClavicle.localRotation;
+            if (rightClavicle)
+                rightClavicleDefaultRot = rightClavicle.localRotation;
 
-            if (_rightClavicle != null)
-                _rightClavicleDefaultRot = _rightClavicle.localRotation;
+            if (handsAnimator && !string.IsNullOrWhiteSpace(dodgeTriggerName))
+                dodgeTriggerHash = Animator.StringToHash(dodgeTriggerName);
 
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible   = false;
@@ -99,129 +120,172 @@ namespace Project.Scripts.Player
 
         private void HandleLook()
         {
-            float mouseX = Input.GetAxis("Mouse X") * _mouseSensitivity * Time.deltaTime;
-            float mouseY = Input.GetAxis("Mouse Y") * _mouseSensitivity * Time.deltaTime;
+            var mouseX = Input.GetAxis("Mouse X") * mouseSensitivity * Time.deltaTime;
+            var mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity * Time.deltaTime;
 
-            // Горизонтальный поворот персонажа
             transform.Rotate(Vector3.up * mouseX);
 
-            // Вертикальный поворот камеры
-            _cameraPitch -= mouseY;
-            _cameraPitch  = Mathf.Clamp(_cameraPitch, -_verticalLimit, _verticalLimit);
+            cameraPitch -= mouseY;
+            cameraPitch  = Mathf.Clamp(cameraPitch, -verticalLimit, verticalLimit);
 
-            if (_camera != null)
-                _camera.transform.localRotation = Quaternion.Euler(_cameraPitch, 0f, 0f);
+            camera.transform.localRotation = Quaternion.Euler(cameraPitch, 0f, 0f);
         }
 
         #endregion
 
-        #region Движение + стамина + жгучесть
+        #region Движение + стамина + жгучесть + додж
 
         private void HandleMovement()
         {
-            float inputX = Input.GetAxisRaw("Horizontal");
-            float inputZ = Input.GetAxisRaw("Vertical");
+            var inputX = Input.GetAxisRaw("Horizontal");
+            var inputZ = Input.GetAxisRaw("Vertical");
 
-            Vector3 inputDir = new Vector3(inputX, 0f, inputZ);
-            inputDir         = Vector3.ClampMagnitude(inputDir, 1f);
+            var inputDir = new Vector3(inputX, 0f, inputZ);
+            inputDir     = Vector3.ClampMagnitude(inputDir, 1f);
 
-            bool hasInput = inputDir.sqrMagnitude > 0.0001f;
+            var hasInput        = inputDir.sqrMagnitude > 0.0001f;
+            var staminaDepleted = stamina.IsDepleted;
 
-            bool staminaDepleted = _stamina != null && _stamina.IsDepleted;
+            if (dodgeCooldownTimer > 0f)
+                dodgeCooldownTimer -= Time.deltaTime;
 
-            // Запрос на бег: только при наличии ввода и стамины
-            bool runRequested =
+            var dodgePressed = Input.GetKeyDown(KeyCode.LeftShift);
+
+            if (dodgePressed &&
+                !IsDodging &&
+                controller.isGrounded &&
+                hasInput &&
+                dodgeCooldownTimer <= 0f &&
+                !staminaDepleted &&
+                stamina.HasEnough(dodgeStaminaCost) &&
+                stamina.TrySpend(dodgeStaminaCost))
+            {
+                var worldDir = transform.TransformDirection(inputDir).normalized;
+                StartDodge(worldDir);
+                return;
+            }
+
+            if (IsDodging)
+            {
+                UpdateDodge();
+                UpdateStaminaRegenMode(false, false);
+                return;
+            }
+
+            var runRequested =
                 Input.GetKey(KeyCode.LeftShift) &&
                 hasInput &&
                 !staminaDepleted;
 
-            float baseSpeed = _walkSpeed;
+            var baseSpeed = walkSpeed;
 
             if (runRequested)
-                baseSpeed = _runSpeed;
+                baseSpeed = runSpeed;
             else if (staminaDepleted)
-                baseSpeed = _walkSpeed * _noStaminaSpeedMultiplier;
+                baseSpeed = walkSpeed * noStaminaSpeedMultiplier;
 
-            // Множитель от жгучести
-            if (_burn != null)
-                baseSpeed *= _burn.SpeedMultiplier;
+            baseSpeed *= burn.SpeedMultiplier;
 
-            Vector3 moveDir = transform.TransformDirection(inputDir) * baseSpeed;
+            var moveDir = transform.TransformDirection(inputDir) * baseSpeed;
 
-            // Расход стамины на бег
-            if (runRequested && _stamina != null && _runStaminaCostPerSecond > 0f)
+            if (runRequested && runStaminaCostPerSecond > 0f)
             {
-                float cost = _runStaminaCostPerSecond * Time.deltaTime;
-                if (!_stamina.TrySpend(cost))
+                var cost = runStaminaCostPerSecond * Time.deltaTime;
+                if (!stamina.TrySpend(cost))
                 {
-                    // Стамина закончилась в этом кадре – сбрасываем бег
-                    staminaDepleted = _stamina.IsDepleted;
+                    staminaDepleted = stamina.IsDepleted;
                     baseSpeed = staminaDepleted
-                        ? _walkSpeed * _noStaminaSpeedMultiplier
-                        : _walkSpeed;
+                        ? walkSpeed * noStaminaSpeedMultiplier
+                        : walkSpeed;
 
-                    if (_burn != null)
-                        baseSpeed *= _burn.SpeedMultiplier;
-
-                    moveDir = transform.TransformDirection(inputDir) * baseSpeed;
+                    baseSpeed *= burn.SpeedMultiplier;
+                    moveDir    = transform.TransformDirection(inputDir) * baseSpeed;
                     runRequested = false;
                 }
             }
 
-            // Прыжок
-            if (_controller.isGrounded)
+            if (controller.isGrounded)
             {
-                if (_verticalVelocity < 0f)
-                    _verticalVelocity = -2f; // прижимаем к земле
+                if (verticalVelocity < 0f)
+                    verticalVelocity = -2f;
 
                 if (Input.GetButtonDown("Jump") && !staminaDepleted)
                 {
-                    bool canJump = true;
-
-                    if (_stamina != null && _jumpStaminaCost > 0f)
-                        canJump = _stamina.TrySpend(_jumpStaminaCost);
-
+                    var canJump = jumpStaminaCost <= 0f || stamina.TrySpend(jumpStaminaCost);
                     if (canJump)
-                        _verticalVelocity = _jumpForce;
+                        verticalVelocity = jumpForce;
                 }
             }
 
-            _verticalVelocity += _gravity * Time.deltaTime;
+            verticalVelocity += gravity * Time.deltaTime;
 
-            Vector3 velocity = moveDir;
-            velocity.y       = _verticalVelocity;
+            var velocity = moveDir;
+            velocity.y   = verticalVelocity;
 
-            _controller.Move(velocity * Time.deltaTime);
+            controller.Move(velocity * Time.deltaTime);
 
             UpdateStaminaRegenMode(hasInput, runRequested);
         }
 
+        private void StartDodge(Vector3 worldDirection)
+        {
+            IsDodging          = true;
+            dodgeTimer         = dodgeDuration;
+            dodgeCooldownTimer = dodgeCooldown;
+
+            var dodgeSpeed = dodgeDistance / Mathf.Max(dodgeDuration, 0.01f);
+            dodgeVelocity  = worldDirection * dodgeSpeed;
+
+            verticalVelocity = 0f;
+
+            if (handsAnimator && dodgeTriggerHash != 0)
+                handsAnimator.SetTrigger(dodgeTriggerName);
+
+            combatController?.CancelCurrentAttack();
+
+            DodgeStarted?.Invoke();
+        }
+
+        private void UpdateDodge()
+        {
+            dodgeTimer -= Time.deltaTime;
+            if (dodgeTimer <= 0f)
+            {
+                IsDodging   = false;
+                dodgeVelocity = Vector3.zero;
+                DodgeEnded?.Invoke();
+            }
+
+            if (controller.isGrounded && verticalVelocity < 0f)
+                verticalVelocity = -2f;
+
+            verticalVelocity += gravity * Time.deltaTime;
+
+            var velocity = dodgeVelocity;
+            velocity.y   = verticalVelocity;
+
+            controller.Move(velocity * Time.deltaTime);
+        }
+
         private void UpdateStaminaRegenMode(bool hasInput, bool isRunning)
         {
-            if (_stamina == null)
-                return;
-
-            // В воздухе – регена нет
-            if (!_controller.isGrounded)
+            if (!controller.isGrounded)
             {
-                _stamina.SetRegenMode(PlayerStamina.RegenMode.None);
+                stamina.SetRegenMode(PlayerStamina.RegenMode.None);
                 return;
             }
 
-            if (isRunning)
+            if (isRunning || IsDodging)
             {
-                // При беге регена нет, стамина только тратится
-                _stamina.SetRegenMode(PlayerStamina.RegenMode.None);
+                stamina.SetRegenMode(PlayerStamina.RegenMode.None);
             }
             else if (hasInput)
             {
-                // Ходьба – медленный реген
-                _stamina.SetRegenMode(PlayerStamina.RegenMode.Walk);
+                stamina.SetRegenMode(PlayerStamina.RegenMode.Walk);
             }
             else
             {
-                // Стоим – быстрый реген
-                _stamina.SetRegenMode(PlayerStamina.RegenMode.Idle);
+                stamina.SetRegenMode(PlayerStamina.RegenMode.Idle);
             }
         }
 
@@ -231,87 +295,88 @@ namespace Project.Scripts.Player
 
         private void HandleHandBob()
         {
-            if (_handsRoot == null && _leftClavicle == null && _rightClavicle == null)
+            if (!handsRoot && !leftClavicle && !rightClavicle)
                 return;
 
-            float inputX = Input.GetAxisRaw("Horizontal");
-            float inputZ = Input.GetAxisRaw("Vertical");
+            var inputX = Input.GetAxisRaw("Horizontal");
+            var inputZ = Input.GetAxisRaw("Vertical");
 
-            bool isMoving =
-                _controller.isGrounded &&
-                new Vector2(inputX, inputZ).sqrMagnitude > _moveThreshold * _moveThreshold;
+            var isMoving =
+                controller.isGrounded &&
+                new Vector2(inputX, inputZ).sqrMagnitude > moveThreshold * moveThreshold;
+
+            if (IsDodging)
+                isMoving = false;
 
             if (isMoving)
             {
-                _bobTimer += Time.deltaTime * _bobFrequency;
+                bobTimer += Time.deltaTime * bobFrequency;
 
-                // Вертикальное покачивание всего рига рук
-                if (_handsRoot != null)
+                if (handsRoot)
                 {
-                    float bobOffsetY = Mathf.Sin(_bobTimer) * _bobAmplitude;
-                    Vector3 targetPos = _handsRootDefaultLocalPos + new Vector3(0f, bobOffsetY, 0f);
+                    var bobOffsetY = Mathf.Sin(bobTimer) * bobAmplitude;
+                    var targetPos  = handsRootDefaultLocalPos + new Vector3(0f, bobOffsetY, 0f);
 
-                    _handsRoot.localPosition = Vector3.Lerp(
-                        _handsRoot.localPosition,
+                    handsRoot.localPosition = Vector3.Lerp(
+                        handsRoot.localPosition,
                         targetPos,
-                        Time.deltaTime * _bobReturnSpeed
+                        Time.deltaTime * bobReturnSpeed
                     );
                 }
 
-                // Лёгкое раздельное покачивание через поворот ключиц
-                float swingLeft  = Mathf.Sin(_bobTimer) * _clavicleSwingAngle;
-                float swingRight = Mathf.Sin(_bobTimer + Mathf.PI) * _clavicleSwingAngle;
+                var swingLeft  = Mathf.Sin(bobTimer) * clavicleSwingAngle;
+                var swingRight = Mathf.Sin(bobTimer + Mathf.PI) * clavicleSwingAngle;
 
-                if (_leftClavicle != null)
+                if (leftClavicle)
                 {
-                    Quaternion swingRot = Quaternion.Euler(0f, 0f, swingLeft);
-                    _leftClavicle.localRotation =
+                    var swingRot = Quaternion.Euler(0f, 0f, swingLeft);
+                    leftClavicle.localRotation =
                         Quaternion.Slerp(
-                            _leftClavicle.localRotation,
-                            _leftClavicleDefaultRot * swingRot,
-                            Time.deltaTime * _bobReturnSpeed
+                            leftClavicle.localRotation,
+                            leftClavicleDefaultRot * swingRot,
+                            Time.deltaTime * bobReturnSpeed
                         );
                 }
 
-                if (_rightClavicle != null)
+                if (rightClavicle)
                 {
-                    Quaternion swingRot = Quaternion.Euler(0f, 0f, -swingRight);
-                    _rightClavicle.localRotation =
+                    var swingRot = Quaternion.Euler(0f, 0f, -swingRight);
+                    rightClavicle.localRotation =
                         Quaternion.Slerp(
-                            _rightClavicle.localRotation,
-                            _rightClavicleDefaultRot * swingRot,
-                            Time.deltaTime * _bobReturnSpeed
+                            rightClavicle.localRotation,
+                            rightClavicleDefaultRot * swingRot,
+                            Time.deltaTime * bobReturnSpeed
                         );
                 }
             }
             else
             {
-                _bobTimer = 0f;
+                bobTimer = 0f;
 
-                if (_handsRoot != null)
+                if (handsRoot)
                 {
-                    _handsRoot.localPosition = Vector3.Lerp(
-                        _handsRoot.localPosition,
-                        _handsRootDefaultLocalPos,
-                        Time.deltaTime * _bobReturnSpeed
+                    handsRoot.localPosition = Vector3.Lerp(
+                        handsRoot.localPosition,
+                        handsRootDefaultLocalPos,
+                        Time.deltaTime * bobReturnSpeed
                     );
                 }
 
-                if (_leftClavicle != null)
+                if (leftClavicle)
                 {
-                    _leftClavicle.localRotation = Quaternion.Slerp(
-                        _leftClavicle.localRotation,
-                        _leftClavicleDefaultRot,
-                        Time.deltaTime * _bobReturnSpeed
+                    leftClavicle.localRotation = Quaternion.Slerp(
+                        leftClavicle.localRotation,
+                        leftClavicleDefaultRot,
+                        Time.deltaTime * bobReturnSpeed
                     );
                 }
 
-                if (_rightClavicle != null)
+                if (rightClavicle)
                 {
-                    _rightClavicle.localRotation = Quaternion.Slerp(
-                        _rightClavicle.localRotation,
-                        _rightClavicleDefaultRot,
-                        Time.deltaTime * _bobReturnSpeed
+                    rightClavicle.localRotation = Quaternion.Slerp(
+                        rightClavicle.localRotation,
+                        rightClavicleDefaultRot,
+                        Time.deltaTime * bobReturnSpeed
                     );
                 }
             }

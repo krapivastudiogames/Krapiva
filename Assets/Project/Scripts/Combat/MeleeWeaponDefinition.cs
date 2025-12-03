@@ -1,8 +1,5 @@
 // MeleeWeaponDefinition.cs
 // Описание параметров палки/оружия для ближнего боя.
-//
-// Папка: Project/Scripts/Combat
-// Namespace: Project.Scripts.Combat
 
 using UnityEngine;
 
