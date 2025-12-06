@@ -154,7 +154,7 @@ Material:
     - _AddPrecomputedVelocity: 1
     - _AlphaCutoff: 0.5
     - _BaseAOIntensity: 0.32
-    - _BaseAlbedoBrightness: 1.66
+    - _BaseAlbedoBrightness: 2.6
     - _BaseAlbedoDesaturation: 0.313
     - _BaseEmissiveIntensity: 2
     - _BaseEmissiveMaskContrast: 2
@@ -164,7 +164,7 @@ Material:
     - _BaseSmoothness: 0.5
     - _BaseSmoothnessIntensity: 1
     - _BaseSmoothnessMax: 1
-    - _BaseSmoothnessMin: 0
+    - _BaseSmoothnessMin: 0.19
     - _BaseUVScale: 1
     - _BumpScale: 1
     - _BumpScale1: 1
@@ -202,20 +202,20 @@ Material:
     - _TopContrast: 1
     - _TopEnableNoise: 0
     - _TopIntensity: 0
-    - _TopLayerContrast: 15.4
+    - _TopLayerContrast: 8.2
     - _TopLayerIntensity: 1
     - _TopLayerInvertMask: 0
     - _TopLayerNoiseContrast: 4.61
     - _TopLayerNoiseUVScale: 8.8
     - _TopLayerNormalInfluence: 0
     - _TopLayerNormalIntensity: 1
-    - _TopLayerOffset: 0.52
+    - _TopLayerOffset: 0.097
     - _TopLayerRoughnessIntensity: 1
     - _TopLayerSmoothnessIntensity: 1
     - _TopLayerSmoothnessMax: 1
     - _TopLayerSmoothnessMin: 0
-    - _TopLayerUVScale: 5
-    - _TopLayerVPaintMaskIntensity: 0.113
+    - _TopLayerUVScale: 1.5
+    - _TopLayerVPaintMaskIntensity: 0.329
     - _TopNoiseUVScale: 1
     - _TopNormalIntensity: 1
     - _TopOffset: 0.5
@@ -225,7 +225,7 @@ Material:
     - _ZWrite: 1
     - __dirty: 0
     m_Colors:
-    - _BaseAlbedoColor: {r: 0.16923848, g: 0.16981131, b: 0.15138838, a: 0}
+    - _BaseAlbedoColor: {r: 0.21568628, g: 0.21568628, b: 0.21568628, a: 1}
     - _BaseAlbedoColor1: {r: 0.8679245, g: 0.25792095, b: 0.25792095, a: 0.5019608}
     - _BaseAlbedoColor2: {r: 0.5520116, g: 0.41788515, b: 0.34191445, a: 0.5019608}
     - _BaseColor: {r: 1, g: 1, b: 1, a: 0}
